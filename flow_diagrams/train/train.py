@@ -23,7 +23,7 @@ def sample_loss(
     prior_vol = jnp.prod( scale_prior * reference_box)
 
     new_pos, new_scale, ldj = flow.forward(
-        pos_prior, scale_prior, target_temp, target_press
+        pos_prior, scale_prior, target_press, target_temp
     )
 
     new_box = new_scale * reference_box
