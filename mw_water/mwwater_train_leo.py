@@ -1,5 +1,6 @@
-# %%
 import jax
+print("JAX CONFIG ENABLE X64 ",jax.config.jax_enable_x64)  # Should print True
+
 jax.devices()
 
 # %%
@@ -8,7 +9,6 @@ sys.path.append('/home/ninarell/OneDrive/WP_GAN/B_GEN/flow_diagrams/')
 import flow_diagrams
 
 # %%
-import jax
 import time
 import equinox as eqx
 import numpy as np
@@ -25,15 +25,10 @@ import pickle
 
 
 # %%
+jax.devices()
+
+# %%
 from jax_md import space, partition
-
-import argparse
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--filename_prior", type=str, required=True)
-args = parser.parse_args()
-
-filename_prior = args.filename_prior
 
 # %%
 from flow_diagrams.utils.train import log_weights_given_latent, normalize_weights, sampling_efficiency, effective_sample_size, delta_f_to_prior
@@ -120,7 +115,7 @@ def wrap_to_box(pos, box):
     return pos % box
 
 # %%
-jax.config.update("jax_enable_x64", False) #changed to True when running on GPU for 120 particle system
+jax.config.update("jax_enable_x64", True) #changed to True when running on GPU for 120 particle system
 
 
 # %%
@@ -146,6 +141,8 @@ REDUCED_PRESS_PRIOR = PRIOR_PRESSURE * conv_p
 
 #[T]mW = 3114.4 K, and [p]mW = 31 400 bars.
 
+#filename_prior = "mW_ex_data_T_270_P_1.0_N_60_Ns_20000_md_seed_301098.npz"
+filename_prior = "2e4_2e7_sim_dump_T_270_P_1.0_N_60_Ns_20000_seed_63782_pbc_tonpz.npz"
 
 data_prior = jnp.load(filename_prior)
 positions_prior_abs = data_prior['pos'] * 1e-1 #in units nm
@@ -177,7 +174,7 @@ BATCH_SIZE = 128
 
 
 # %%
-train_fraction = .8
+train_fraction = 1.
 # Store all displacements relative to first one (which stays at its equilibrium position)
 dataset_prior_train, dataset_prior_test = split_data(train_fraction, positions_prior,
                         energies_prior,
@@ -232,9 +229,9 @@ num_samples = 10
 
 
 # %%
-ene_prior = dataset_prior_test.energies[:num_samples]
-pos_latent = dataset_prior_test.pos[:num_samples]
-scale_latent = dataset_prior_test.scale[:num_samples]
+ene_prior = dataset_prior_train.energies[:num_samples]
+pos_latent = dataset_prior_train.pos[:num_samples]
+scale_latent = dataset_prior_train.scale[:num_samples]
 # config_latent = jax.vmap(transform_abs_pos_to_abs_config)(pos_latent)
 energies_recomputed_prior = jax.vmap(
                compute_sw_energy)(pos_latent,scale_latent)
@@ -251,7 +248,7 @@ print(REDUCED_TEMP_PRIOR, REDUCED_PRESS_PRIOR)
 
 # %%
 
-INTERVAL_FRACTION_P = 0.1 #0.05 -> 0.2 -> 0.8 -> 0.1
+INTERVAL_FRACTION_P = 1000. #0.05 -> 0.2 -> 0.8 -> 0.1
 
 #INTERVAL_FRACTION_T = 0.7 #0.05 -> 0.2 -> 0.8 -> 0.1
 
@@ -284,7 +281,7 @@ t_max = 350.
 #t_min = TEMP_PRIOR - 60
 t_min = 220.
 
-grid_length = 10 
+grid_length = 20 
 conditioning_states= grid_conditional_variables(t_min,t_max,p_min, p_max, grid_length,grid_length) # 8080 -> 1010 -> 3030
 
 
@@ -468,10 +465,10 @@ evaluation_states = grid_conditional_variables(t_min,t_max,p_min, p_max, 8,8)
 
 
 # %%
-n_test = 10
-batch_pos = dataset_prior_test.pos[:n_test]
-batch_scale = dataset_prior_test.scale[:n_test]
-batch_energies = dataset_prior_test.energies[:n_test]
+n_test = 20000
+batch_pos = dataset_prior_train.pos[:n_test]
+batch_scale = dataset_prior_train.scale[:n_test]
+batch_energies = dataset_prior_train.energies[:n_test]
 efficiencies = jnp.empty((0,))
 deltaFs = jnp.empty((0,))
 
@@ -585,16 +582,16 @@ def log_weights_and_conf_given_latent(
 
 
 # %%
-n_test = len(dataset_prior_test.energies)
+n_test = len(dataset_prior_train.energies)
 
 
 # %%
 test_temp_list = jnp.array([230., 240., 250., 260., 270., 280., 290., 300., 310., 320., 330., 340.])
 
 
-batch_pos = dataset_prior_test.pos[:n_test]
-batch_scale = dataset_prior_test.scale[:n_test]
-batch_energies = dataset_prior_test.energies[:n_test]
+batch_pos = dataset_prior_train.pos[:n_test]
+batch_scale = dataset_prior_train.scale[:n_test]
+batch_energies = dataset_prior_train.energies[:n_test]
 
 chunk_size = 128 
 # 120 - > 64
@@ -665,74 +662,7 @@ for i in range(len(test_temp_list)):
 
 # %%
 def weighted_var(list, avg, log_weights):
-    return jnp.sum(jnp.exp(log_weights)*((list - avg)**2))/jnp.sum(jnp.exp(log_weights))
-
-import mdtraj as md
-def radial_distribution_function_single(
-    pos, box, num_particles, n_bins=200, n_dims=3, r_range=None, **kwargs
-):
-    """Compute the RDF of the data, using mdtraj"""
-
-    top = md.Topology()
-    res = top.add_residue('LJ', top.add_chain())
-    for i in range(num_particles): #element type does not matter
-        top.add_atom('Ar', md.element.Element.getBySymbol('Ar'), res)
-
-    # assert jnp.abs(data.max()) <= 1 and data.min() >= 0, "data should be rescaled"
-    assert pos.shape[-1] == 3 and pos.shape[-2] == num_particles
-
-    box_mean = box
-    #assert box_mean.shape == (3,)
-
-    if r_range is None:
-        r_range = (0, np.sqrt(np.sum(np.power(box_mean, 2))) / 2)
-        # r_range = (0, 1)
-
-    # box is needed for PBC. assumed to be cubic/squared
-    unitcell = {
-        "unitcell_lengths": box,
-        "unitcell_angles": np.full((1, n_dims), 90),
-    }
-    # create mdtraj traj object
-    traj = md.Trajectory(pos, top, **unitcell)
-    ij = np.array(np.triu_indices(num_particles, k=1)).T
-    rdf = md.compute_rdf(traj, ij, r_range=r_range, n_bins=n_bins)
-
-    return rdf
-def radial_distribution_function_weighted( w_norm, reduced_positions, red_volumes, n_particles):
-
-    wheights = w_norm
-    pos = reduced_positions
-    box = np.zeros((len(pos), 3))
-    box[:,0] = red_volumes   #box = scale * BOX_EDGES
-    box[:,1] = red_volumes
-    box[:,2] = red_volumes
-        #box = jnp.array(w_x_L_E_dict[(test_temp_list[i], PRIOR_PRESSURE)]["scales"]) #box = scale * BOX_EDGES
-    rdf = radial_distribution_function_single(pos[0], box[0], n_particles)
-    rdf_bins_j = np.array(rdf[0]) * jnp.exp(wheights[0]) 
-    rdf_j = np.array(rdf[1]) * jnp.exp(wheights[0]) #in units nm
-    for j in range(1, len(pos)):
-        pos_j = pos[j]
-        box_j = box[j]
-        rdf = radial_distribution_function_single(pos_j, box_j, n_particles)
-        rdf_bins_j += np.array(rdf[0]) * jnp.exp(wheights[j]) #in units nm
-        rdf_j += np.array(rdf[1]) * jnp.exp(wheights[j]) #in units nm
-
-    normalization = jnp.sum(jnp.exp(wheights))
-
-    return rdf_bins_j/normalization, rdf_j/normalization
-        #print("Calculated RDF for temperature: ", test_temp_list[i])
-
-
-        #rdf = radial_distribution_function_single(pos[0], box[0], NUM_PARTICLES) #r_max = 5.0 nm
-
-        #plt.plot(*rdf)
-        #plt.title(f"RDF at {test_temp_list[i]} K")
-        #plt.xlabel('r (nm)')
-        #plt.ylabel('g(r)')
-        #plt.show()
-        #plot realtime in same figure like in the training loop
-        
+    return jnp.sum(jnp.exp(log_weights)*((list - avg)**2))/jnp.sum(jnp.exp(log_weights))      
 
 # %%
 vc_md = np.load("MD_VC_DATA_"+str(NUM_PARTICLES)+".npz")["v_c_list"]
