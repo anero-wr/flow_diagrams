@@ -5,7 +5,7 @@ jax.devices()
 
 # %%
 import sys
-sys.path.append('/home/ninarell/OneDrive/WP_GAN/B_GEN/flow_diagrams/') 
+sys.path.append('/leonardo_work/IscrC_MiTheGe1/MWWATER/FLOWS/flow_diagrams/') 
 import flow_diagrams
 
 # %%
@@ -30,10 +30,18 @@ jax.devices()
 # %%
 from jax_md import space, partition
 
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--filename_prior", type=str, required=True)
+args = parser.parse_args()
+
+filename_prior = args.filename_prior
+
 # %%
 from flow_diagrams.utils.train import log_weights_given_latent, normalize_weights, sampling_efficiency, effective_sample_size, delta_f_to_prior
 from flow_diagrams.utils.visualization import radial_distribution_function
-from flow_diagrams.utils.data import NumpyLoader, split_data
+from flow_diagrams.utils.data2 import NumpyLoader, split_data
 from flow_diagrams.utils.symmetry import *
 
 from jax import numpy as jnp
@@ -126,7 +134,7 @@ CUT_TYPE = 'switch'
 Press_atm = 1.0 #in atm
 Press_1e30_Pa_per_mol = 1.01325 * 6.022 * 1e-2 * Press_atm
 PRIOR_PRESSURE = Press_1e30_Pa_per_mol # in units sigma_nm**3 / epsilon_kJ/mol = 1e3 Pa/mol
-TEMP_PRIOR  = 270.
+TEMP_PRIOR  = 230.
 md_seed = 301098
 TEMP_INT = int(TEMP_PRIOR)
 
@@ -141,8 +149,6 @@ REDUCED_PRESS_PRIOR = PRIOR_PRESSURE * conv_p
 
 #[T]mW = 3114.4 K, and [p]mW = 31 400 bars.
 
-#filename_prior = "mW_ex_data_T_270_P_1.0_N_60_Ns_20000_md_seed_301098.npz"
-filename_prior = "2e4_2e7_sim_dump_T_270_P_1.0_N_60_Ns_20000_seed_63782_pbc_tonpz.npz"
 
 data_prior = jnp.load(filename_prior)
 positions_prior_abs = data_prior['pos'] * 1e-1 #in units nm
@@ -248,7 +254,7 @@ print(REDUCED_TEMP_PRIOR, REDUCED_PRESS_PRIOR)
 
 # %%
 
-INTERVAL_FRACTION_P = 1000. #0.05 -> 0.2 -> 0.8 -> 0.1
+INTERVAL_FRACTION_P = 3000. #0.05 -> 0.2 -> 0.8 -> 0.1
 
 #INTERVAL_FRACTION_T = 0.7 #0.05 -> 0.2 -> 0.8 -> 0.1
 
@@ -281,7 +287,7 @@ t_max = 350.
 #t_min = TEMP_PRIOR - 60
 t_min = 220.
 
-grid_length = 20 
+grid_length = 80
 conditioning_states= grid_conditional_variables(t_min,t_max,p_min, p_max, grid_length,grid_length) # 8080 -> 1010 -> 3030
 
 
@@ -465,7 +471,7 @@ evaluation_states = grid_conditional_variables(t_min,t_max,p_min, p_max, 8,8)
 
 
 # %%
-n_test = 20000
+n_test = 2000
 batch_pos = dataset_prior_train.pos[:n_test]
 batch_scale = dataset_prior_train.scale[:n_test]
 batch_energies = dataset_prior_train.energies[:n_test]
@@ -665,8 +671,8 @@ def weighted_var(list, avg, log_weights):
     return jnp.sum(jnp.exp(log_weights)*((list - avg)**2))/jnp.sum(jnp.exp(log_weights))      
 
 # %%
-vc_md = np.load("MD_VC_DATA_"+str(NUM_PARTICLES)+".npz")["v_c_list"]
-K_md = np.load("MD_K_DATA_"+str(NUM_PARTICLES)+".npz")["K_list"]
+vc_md = np.load("../../MD_VC_DATA_"+str(NUM_PARTICLES)+".npz")["v_c_list"]
+K_md  = np.load("../../MD_K_DATA_"+str(NUM_PARTICLES)+".npz")["K_list"]
 
 v_c_list = np.zeros(len(test_temp_list))
 K_list = np.zeros(len(test_temp_list))
@@ -710,6 +716,7 @@ plt.tight_layout()
 # Save the figure
 plt.savefig("thermo_properties.png", dpi=300, bbox_inches='tight')
 
+plt.close()
 
 # ---- Save curve data ----
 data = pd.DataFrame({
