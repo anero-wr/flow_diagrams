@@ -171,6 +171,7 @@ assert np.logical_and(1. >= UPPER, positions_prior >= LOWER).all()
 assert np.allclose(positions_prior[:,0,:],0,atol=1e-7)
 
 n_configurations_prior = positions_prior.shape[0] 
+n_samples = n_configurations_prior
 
 print('# Prior samples', n_configurations_prior)
 
@@ -384,6 +385,13 @@ from flow_diagrams.train.train import make_step, batch_loss_temp_press_vmap
 def evaluate_flow(flow,pos,scale,temp,press):
     return flow.forward(pos=pos,scale=scale,temp=temp,press=press)
 
+def calculate_new_pos_and_scale_batch(batch_pos, batch_scale, t_rand, p_rand, flow):
+
+    def single_flow(pos, scale, temp, press):
+        return flow.forward(pos, scale, temp, press)[0:2]
+
+    new_pos_batch, new_scale_batch = jax.vmap(single_flow)(batch_pos, batch_scale, t_rand, p_rand)
+    return new_pos_batch, new_scale_batch
 # %%
 
 eval_state = jnp.array([[REDUCED_TEMP_PRIOR / conv_t, REDUCED_PRESS_PRIOR / conv_p]])
@@ -467,6 +475,69 @@ with open(state_file, "wb") as f:
 print(f"Training salvato con successo come {state_file}.")
 
 # %%
+#conditioning_states = np.array([134.13819885,   2.53356401])
+
+results = {}  # qui salviamo i dati prima di scrivere il file
+
+for (TEMP_PRIOR, PRESSURE_PRIOR) in conditioning_states:
+    all_energies = []
+    all_boxes = []
+    all_weights = []
+
+    print(TEMP_PRIOR, PRESSURE_PRIOR,'\n')
+
+    # Genera batch e calcola energie/volumi
+    for ibatch, (batch_pos, batch_ene, batch_scale) in enumerate(dataloader_train):
+        
+        
+        # temperatura e pressione fisse per il batch
+        t_batch = jnp.full((batch_pos.shape[0],), TEMP_PRIOR) 
+        p_batch = jnp.full((batch_pos.shape[0],), PRESSURE_PRIOR)
+        #print(REDUCED_TEMP_PRIOR*convert_from_reduced_t(EPSILON, KB), REDUCED_PRESS_PRIOR*convert_from_reduced_p(EPSILON, SIGMA))
+
+        # genera nuove configurazioni dal flow
+        new_pos, new_scale = calculate_new_pos_and_scale_batch(batch_pos, batch_scale, t_batch, p_batch, flow)
+
+        # calcola energie
+        batch_energies = jax.vmap(compute_sw_energy)(new_pos, new_scale)
+
+        # porta su host
+        energy_batch = np.array(jax.device_get(batch_energies))
+        pos_batch = jax.device_get(new_pos)
+        box_batch = jax.device_get(new_scale)[:, jnp.newaxis] * BOX_EDGES
+
+        batch_vol = jnp.prod(new_scale[:, jnp.newaxis] * BOX_EDGES, axis=1)
+
+
+        batch_weights = np.exp(-abs((batch_energies + batch_vol *PRESSURE_PRIOR - batch_ene - jnp.prod(batch_scale[:,jnp.newaxis] * BOX_EDGES, axis=1) * PRESSURE_PRIOR ) / (KB * TEMP_PRIOR)))
+
+        batch_weights /= np.sum(batch_weights)
+        
+        all_energies.append(energy_batch)
+        all_boxes.append(box_batch)
+        all_weights.append(batch_weights)
+
+
+
+    # concatena
+    new_energies = np.concatenate(all_energies)[:n_samples]
+    new_boxes = np.concatenate(all_boxes)[:n_samples]
+    new_vol = np.prod(new_boxes, axis=1)
+    new_weights = np.concatenate(all_weights)[:n_samples]
+    
+    # salva in results con chiavi uniche
+    key_prefix = f"{TEMP_PRIOR}_{PRESSURE_PRIOR}"
+    results[f"{key_prefix}_energy"] = new_energies
+    results[f"{key_prefix}_volume"] = new_vol
+    results[f"{key_prefix}_weight"] = new_weights
+
+
+# === Salva in un unico file npz ===
+np.savez("generated_data_test.npz", **results)
+print("Salvato in generated_data_test.npz")
+
+
+
 evaluation_states = grid_conditional_variables(t_min,t_max,p_min, p_max, 8,8)
 
 
