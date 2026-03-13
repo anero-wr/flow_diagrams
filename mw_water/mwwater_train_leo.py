@@ -113,11 +113,6 @@ TEMP_INT = int(TEMP_PRIOR)
 REDUCED_TEMP_PRIOR = TEMP_PRIOR / convert_from_reduced_t(EPSILON, kB)
 REDUCED_PRESS_PRIOR = PRIOR_PRESSURE / convert_from_reduced_p(EPSILON, SIGMA)
 
-#[T]mW = 3114.4 K, and [p]mW = 31 400 bars.
-
-#filename_prior = "mW_ex_data_T_270_P_1.0_N_60_Ns_20000_md_seed_301098.npz"
-filename_prior = "2e4_2e7_sim_dump_T_270_P_1.0_N_60_Ns_20000_seed_63782_pbc_tonpz.npz"
-
 data_prior = jnp.load(filename_prior)
 
 positions_prior_abs = data_prior['pos'] * 1e-1 #in units nm
