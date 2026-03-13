@@ -23,6 +23,22 @@ import pandas as pd
 import pickle
 from jax_md import space, partition
 
+import argparse
+
+parser = argparse.ArgumentParser()
+
+parser.add_argument("--filename_prior", type=str, required=True)
+
+parser.add_argument("--NUM_PARTICLES", type=int, required=True)
+parser.add_argument("--Press_atm", type=float, required=True)
+parser.add_argument("--TEMP_PRIOR", type=float, required=True)
+
+args = parser.parse_args()
+
+filename_prior = args.filename_prior
+NUM_PARTICLES = args.NUM_PARTICLES
+Press_atm = args.Press_atm
+TEMP_PRIOR = args.TEMP_PRIOR
 # %%
 from flow_diagrams.utils.train import normalize_weights, sampling_efficiency, effective_sample_size
 from flow_diagrams.utils.data2 import NumpyLoader, split_data
@@ -52,8 +68,7 @@ A         = 7.049556277 #dimensionless
 B         = 0.6022245584 #dimensionless
 p         = 4. #dimensionless
 q         = 0. #dimensionless
-#theta_0   = np.radians(109.47)
-NUM_PARTICLES = 60
+
 NUM_SAMPLES = 20000
 SPATIAL_DIMENSIONS = 3
 kB = 0.00831446261815324 # in (unit.kilojoule_per_mole/unit.kelvin)
@@ -90,10 +105,8 @@ LOWER = 0.
 UPPER = 1.
 CUT_TYPE = 'switch'
 
-Press_atm = 1.0 #in atm
 Press_1e30_Pa_per_mol = 1.01325 * 6.022 * 1e-2 * Press_atm
 PRIOR_PRESSURE = Press_1e30_Pa_per_mol # in units sigma_nm**3 / epsilon_kJ/mol = 1e3 Pa/mol
-TEMP_PRIOR  = 270.
 md_seed = 301098
 TEMP_INT = int(TEMP_PRIOR)
 
